@@ -1,48 +1,53 @@
 package main
 
 import (
-	"context"
 	"fmt"
+	"log"
 	"net/http"
 	"os"
 	"time"
 )
 
-func main() {
-	// Default to 8.8.8.8 if EXTERNAL_API is not set
+// Check the external API connection
+func checkConnection(w http.ResponseWriter, r *http.Request) {
+	// Default to 8.8.8.8, but use EXTERNAL_API environment variable if set
 	externalAPI := os.Getenv("EXTERNAL_API")
 	if externalAPI == "" {
-		externalAPI = "http://8.8.8.8"
+		externalAPI = "8.8.8.8" // default
 	}
 
-	http.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
-		// Set a timeout for the outgoing request
-		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-		defer cancel()
-
-		// Create a new HTTP request with the context
-		req, err := http.NewRequestWithContext(ctx, http.MethodGet, externalAPI, nil)
-		if err != nil {
-			http.Error(w, fmt.Sprintf("Failed to create request: %v", err), http.StatusInternalServerError)
-			return
-		}
-
-		// Perform the request
-		client := &http.Client{}
-		resp, err := client.Do(req)
-		if err != nil {
-			http.Error(w, fmt.Sprintf("Error reaching external API: %v", err), http.StatusServiceUnavailable)
-			return
-		}
-		defer resp.Body.Close()
-
-		// If the request succeeds, return a success message
-		w.WriteHeader(http.StatusOK)
-		fmt.Fprintf(w, "Successfully connected to external API: %s\n", externalAPI)
-	})
-
-	fmt.Printf("Server running on http://localhost:8080\nExternal API: %s\n", externalAPI)
-	if err := http.ListenAndServe(":8080", nil); err != nil {
-		fmt.Printf("Server failed: %v\n", err)
+	// Set a timeout for the connection attempt
+	client := http.Client{
+		Timeout: 5 * time.Second,
 	}
+
+	// Make the GET request to the external API
+	resp, err := client.Get("http://" + externalAPI)
+	if err != nil {
+		// If we can't connect, return an error message
+		log.Printf("Failed to connect to %s: %v", externalAPI, err)
+		http.Error(w, fmt.Sprintf("Failed to reach external API %s: %v", externalAPI, err), http.StatusInternalServerError)
+		return
+	}
+	defer resp.Body.Close()
+
+	// If we get a response, check the status code
+	if resp.StatusCode != 200 {
+		log.Printf("Received non-OK status code from %s: %d", externalAPI, resp.StatusCode)
+		http.Error(w, fmt.Sprintf("Received non-OK status code %d from external API %s", resp.StatusCode, externalAPI), http.StatusInternalServerError)
+		return
+	}
+
+	// If successful, return a success message
+	w.WriteHeader(http.StatusOK)
+	w.Write([]byte(fmt.Sprintf("Successfully connected to %s", externalAPI)))
+}
+
+func main() {
+	// Handle the root route
+	http.HandleFunc("/", checkConnection)
+
+	// Start the HTTP server
+	log.Println("Server started on port 8080")
+	http.ListenAndServe(":8080", nil)
 }
