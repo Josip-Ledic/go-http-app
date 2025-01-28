@@ -28,12 +28,14 @@ func checkConnection(w http.ResponseWriter, r *http.Request) {
 	log.Printf("Incoming request from: %s", r.RemoteAddr)
 
 	// Make the GET request to the external API
-	resp, err := client.Get("http://" + externalAPI)
+	resp, err := client.Get("https://" + externalAPI)
 	if err != nil {
 		// If we can't connect, return an error message
 		log.Printf("Failed to connect to %s: %v", externalAPI, err)
 		responseMessage = fmt.Sprintf("Error: Failed to reach external API %s\nDetails: %v\n", externalAPI, err)
-		http.Error(w, responseMessage, http.StatusInternalServerError)
+
+		// Set appropriate status code for error
+		http.Error(w, responseMessage, http.StatusServiceUnavailable)
 		return
 	}
 	defer resp.Body.Close()
@@ -42,7 +44,9 @@ func checkConnection(w http.ResponseWriter, r *http.Request) {
 	if resp.StatusCode != 200 {
 		log.Printf("Received non-OK status code from %s: %d", externalAPI, resp.StatusCode)
 		responseMessage = fmt.Sprintf("Error: Received non-OK status code %d from external API %s\nDetails: Expected 200, but got %d\n", externalAPI, resp.StatusCode, resp.StatusCode)
-		http.Error(w, responseMessage, http.StatusInternalServerError)
+
+		// Return the non-200 status code
+		http.Error(w, responseMessage, http.StatusServiceUnavailable)
 		return
 	}
 
