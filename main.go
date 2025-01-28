@@ -24,6 +24,9 @@ func checkConnection(w http.ResponseWriter, r *http.Request) {
 	// Prepare the message to send back in the response
 	var responseMessage string
 
+	// Log the incoming request for debugging
+	log.Printf("Incoming request from: %s", r.RemoteAddr)
+
 	// Make the GET request to the external API
 	resp, err := client.Get("http://" + externalAPI)
 	if err != nil {
@@ -46,7 +49,8 @@ func checkConnection(w http.ResponseWriter, r *http.Request) {
 	// If successful, prepare the success message
 	responseMessage = fmt.Sprintf("Success: Successfully connected to external API %s\nResponse Status: %d\nDetails: Received a 200 OK response.\n", externalAPI, resp.StatusCode)
 
-	// Return the response message
+	// Set the content type and write the response message
+	w.Header().Set("Content-Type", "text/plain")
 	w.WriteHeader(http.StatusOK)
 	w.Write([]byte(responseMessage))
 }
@@ -57,5 +61,8 @@ func main() {
 
 	// Start the HTTP server
 	log.Println("Server started on port 8080")
-	http.ListenAndServe(":8080", nil)
+	err := http.ListenAndServe(":8080", nil)
+	if err != nil {
+		log.Fatalf("Server failed to start: %v", err)
+	}
 }
