@@ -21,12 +21,16 @@ func checkConnection(w http.ResponseWriter, r *http.Request) {
 		Timeout: 5 * time.Second,
 	}
 
+	// Prepare the message to send back in the response
+	var responseMessage string
+
 	// Make the GET request to the external API
 	resp, err := client.Get("http://" + externalAPI)
 	if err != nil {
 		// If we can't connect, return an error message
 		log.Printf("Failed to connect to %s: %v", externalAPI, err)
-		http.Error(w, fmt.Sprintf("Failed to reach external API %s: %v", externalAPI, err), http.StatusInternalServerError)
+		responseMessage = fmt.Sprintf("Error: Failed to reach external API %s\nDetails: %v\n", externalAPI, err)
+		http.Error(w, responseMessage, http.StatusInternalServerError)
 		return
 	}
 	defer resp.Body.Close()
@@ -34,13 +38,17 @@ func checkConnection(w http.ResponseWriter, r *http.Request) {
 	// If we get a response, check the status code
 	if resp.StatusCode != 200 {
 		log.Printf("Received non-OK status code from %s: %d", externalAPI, resp.StatusCode)
-		http.Error(w, fmt.Sprintf("Received non-OK status code %d from external API %s", resp.StatusCode, externalAPI), http.StatusInternalServerError)
+		responseMessage = fmt.Sprintf("Error: Received non-OK status code %d from external API %s\nDetails: Expected 200, but got %d\n", externalAPI, resp.StatusCode, resp.StatusCode)
+		http.Error(w, responseMessage, http.StatusInternalServerError)
 		return
 	}
 
-	// If successful, return a success message
+	// If successful, prepare the success message
+	responseMessage = fmt.Sprintf("Success: Successfully connected to external API %s\nResponse Status: %d\nDetails: Received a 200 OK response.\n", externalAPI, resp.StatusCode)
+
+	// Return the response message
 	w.WriteHeader(http.StatusOK)
-	w.Write([]byte(fmt.Sprintf("Successfully connected to %s", externalAPI)))
+	w.Write([]byte(responseMessage))
 }
 
 func main() {
