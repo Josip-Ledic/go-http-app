@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io"
 	"log"
+	"net"
 	"net/http"
 	"os"
 	"time"
@@ -17,16 +18,29 @@ type Todo struct {
 	Completed bool   `json:"completed"`
 }
 
+func createHTTPClient() *http.Client {
+	// Custom transport to force new connections
+	transport := &http.Transport{
+		DisableKeepAlives: true, // Ensures every request uses a fresh connection
+		DialContext: (&net.Dialer{
+			Timeout:   10 * time.Second,
+			KeepAlive: 0, // Disable keep-alive at TCP level
+		}).DialContext,
+	}
+
+	return &http.Client{
+		Transport: transport,
+		Timeout:   10 * time.Second,
+	}
+}
+
 func checkConnection(w http.ResponseWriter, r *http.Request) {
-	// Use jsonplaceholder as the test API
 	externalAPI := os.Getenv("EXTERNAL_API")
 	if externalAPI == "" {
 		externalAPI = "https://jsonplaceholder.typicode.com/todos/1"
 	}
 
-	client := http.Client{
-		Timeout: 10 * time.Second,
-	}
+	client := createHTTPClient() // New client per request
 
 	log.Println("Incoming request, attempting connection to:", externalAPI)
 
@@ -44,7 +58,6 @@ func checkConnection(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Read response body
 	body, err := io.ReadAll(resp.Body)
 	if err != nil || len(body) == 0 {
 		log.Printf("Failed to read response from %s", externalAPI)
@@ -52,7 +65,6 @@ func checkConnection(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Parse JSON
 	var todo Todo
 	if err := json.Unmarshal(body, &todo); err != nil {
 		log.Printf("Invalid JSON received from %s", externalAPI)
@@ -60,7 +72,6 @@ func checkConnection(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// If the response contains expected data, print success
 	responseMessage := fmt.Sprintf(
 		"Successfully connected to external API %s\nStatus: %d\nPayload: %+v\n\n",
 		externalAPI, resp.StatusCode, todo,
