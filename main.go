@@ -1,65 +1,81 @@
 package main
 
 import (
+	"encoding/json"
 	"fmt"
+	"io"
 	"log"
 	"net/http"
 	"os"
 	"time"
 )
 
+type Todo struct {
+	UserID    int    `json:"userId"`
+	ID        int    `json:"id"`
+	Title     string `json:"title"`
+	Completed bool   `json:"completed"`
+}
+
 func checkConnection(w http.ResponseWriter, r *http.Request) {
-	// Default to 8.8.8.8, but use EXTERNAL_API environment variable if set
+	// Use jsonplaceholder as the test API
 	externalAPI := os.Getenv("EXTERNAL_API")
 	if externalAPI == "" {
-		externalAPI = "8.8.8.8"
+		externalAPI = "https://jsonplaceholder.typicode.com/todos/1"
 	}
 
 	client := http.Client{
 		Timeout: 10 * time.Second,
 	}
 
-	var responseMessage string
+	log.Println("Incoming request, attempting connection to:", externalAPI)
 
-	log.Printf("Incoming request")
-
-	resp, err := client.Get("https://" + externalAPI)
+	resp, err := client.Get(externalAPI)
 	if err != nil {
-		// If we can't connect, return an error message
 		log.Printf("Failed to connect to %s: %v", externalAPI, err)
-		responseMessage = fmt.Sprintf("Error: Failed to reach external API %s\nDetails: %v\n", externalAPI, err)
-
-		// Set appropriate status code for error
-		http.Error(w, responseMessage, http.StatusServiceUnavailable)
+		http.Error(w, fmt.Sprintf("Error: Failed to reach external API %s\nDetails: %v\n", externalAPI, err), http.StatusServiceUnavailable)
 		return
 	}
+	defer resp.Body.Close()
 
-	// If we get a response, check the status code
-	if resp.StatusCode != 200 {
+	if resp.StatusCode != http.StatusOK {
 		log.Printf("Received non-OK status code from %s: %d", externalAPI, resp.StatusCode)
-		responseMessage = fmt.Sprintf("Error: Received non-OK status code %d from external API %s\n\n", externalAPI, resp.StatusCode)
-
-		http.Error(w, responseMessage, http.StatusServiceUnavailable)
+		http.Error(w, fmt.Sprintf("Error: Received non-OK status code %d from external API %s\n\n", resp.StatusCode, externalAPI), http.StatusServiceUnavailable)
 		return
 	}
 
-	responseMessage = fmt.Sprintf("Successfully connected to external API %s\n Status: %d\n\n", externalAPI, resp.StatusCode)
+	// Read response body
+	body, err := io.ReadAll(resp.Body)
+	if err != nil || len(body) == 0 {
+		log.Printf("Failed to read response from %s", externalAPI)
+		http.Error(w, fmt.Sprintf("Error: Received empty response from %s\n\n", externalAPI), http.StatusServiceUnavailable)
+		return
+	}
+
+	// Parse JSON
+	var todo Todo
+	if err := json.Unmarshal(body, &todo); err != nil {
+		log.Printf("Invalid JSON received from %s", externalAPI)
+		http.Error(w, fmt.Sprintf("Error: Invalid JSON received from %s\n\n", externalAPI), http.StatusServiceUnavailable)
+		return
+	}
+
+	// If the response contains expected data, print success
+	responseMessage := fmt.Sprintf(
+		"Successfully connected to external API %s\nStatus: %d\nPayload: %+v\n\n",
+		externalAPI, resp.StatusCode, todo,
+	)
 
 	w.Header().Set("Content-Type", "text/plain")
 	w.WriteHeader(http.StatusOK)
 	w.Write([]byte(responseMessage))
-
-	defer resp.Body.Close()
 }
 
 func main() {
-	// Handle the root route
 	http.HandleFunc("/", checkConnection)
 
-	// Start the HTTP server
 	log.Println("Server started on port 8080")
-	err := http.ListenAndServe(":8080", nil)
-	if err != nil {
+	if err := http.ListenAndServe(":8080", nil); err != nil {
 		log.Fatalf("Server failed to start: %v", err)
 	}
 }
